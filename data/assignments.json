@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "description": "나침반(Compass) Mock 판정·승인·실행 원장 - 가상 데이터입니다.",
+    "world_today": "2026-09-15",
+    "mutable": true,
+    "invariant": "assignments[].committed_cost 중 status != 'CANCELLED' 인 2026-09 assignment의 합계 = token_budget.monthly_spent (128.66)"
+  },
+  "pipeline_stages": ["RECOMMENDED", "APPROVED", "IN_PROGRESS", "DONE", "CANCELLED"],
+  "cancellable_stages": ["RECOMMENDED", "APPROVED"],
+  "assignments": [
+    {
+      "assignment_id": "ASG-20260910-001",
+      "team_id": "team_ai-enablement",
+      "task_id": "T-3002",
+      "task_name": "검색 자동완성 API",
+      "pipeline": "W-SIMPLE",
+      "committed_cost": 19.90,
+      "actual_cost": 18.40,
+      "committed_at": "2026-09-10T09:12:00+09:00",
+      "status": "DONE",
+      "timeline": [
+        {"stage": "RECOMMENDED", "at": "2026-09-10T09:05:00+09:00"},
+        {"stage": "APPROVED", "at": "2026-09-10T09:12:00+09:00"},
+        {"stage": "IN_PROGRESS", "at": "2026-09-10T09:15:00+09:00"},
+        {"stage": "DONE", "at": "2026-09-10T09:38:00+09:00"}
+      ]
+    },
+    {
+      "assignment_id": "ASG-20260912-002",
+      "team_id": "team_ai-enablement",
+      "task_id": "T-4001",
+      "task_name": "대시보드 UI 리뉴얼",
+      "pipeline": "W-SIMPLE",
+      "committed_cost": 24.50,
+      "actual_cost": 26.10,
+      "committed_at": "2026-09-12T20:03:00+09:00",
+      "status": "DONE",
+      "timeline": [
+        {"stage": "RECOMMENDED", "at": "2026-09-12T19:58:00+09:00"},
+        {"stage": "APPROVED", "at": "2026-09-12T20:03:00+09:00"},
+        {"stage": "IN_PROGRESS", "at": "2026-09-12T20:06:00+09:00"},
+        {"stage": "DONE", "at": "2026-09-12T20:35:00+09:00"}
+      ],
+      "note": "실측(26.10)이 예상(24.50)을 초과한 사례 - 장기기억 카탈로그 보정용 관측치"
+    },
+    {
+      "assignment_id": "ASG-20260914-003",
+      "team_id": "team_ai-enablement",
+      "task_id": "T-1005",
+      "task_name": "레거시 인증 모듈 리팩터링",
+      "pipeline": "W-SIMPLE",
+      "committed_cost": 38.20,
+      "actual_cost": null,
+      "committed_at": "2026-09-14T11:08:00+09:00",
+      "status": "IN_PROGRESS",
+      "timeline": [
+        {"stage": "RECOMMENDED", "at": "2026-09-14T11:01:00+09:00"},
+        {"stage": "APPROVED", "at": "2026-09-14T11:08:00+09:00"},
+        {"stage": "IN_PROGRESS", "at": "2026-09-14T11:12:00+09:00"}
+      ],
+      "note": "취소 불가 단계 검증용 - revise_assignment 호출 시 정책 근거와 함께 스코프 축소·재협상 절차를 안내해야 합니다."
+    },
+    {
+      "assignment_id": "ASG-20260914-004",
+      "team_id": "team_ai-enablement",
+      "task_id": "T-5002",
+      "task_name": "CI/CD 파이프라인 이중화",
+      "pipeline": "W-SIMPLE",
+      "committed_cost": 46.06,
+      "actual_cost": 51.30,
+      "committed_at": "2026-09-14T14:41:00+09:00",
+      "status": "DONE",
+      "timeline": [
+        {"stage": "RECOMMENDED", "at": "2026-09-14T14:33:00+09:00"},
+        {"stage": "APPROVED", "at": "2026-09-14T14:41:00+09:00"},
+        {"stage": "IN_PROGRESS", "at": "2026-09-14T14:44:00+09:00"},
+        {"stage": "DONE", "at": "2026-09-14T15:20:00+09:00"}
+      ]
+    }
+  ]
+}

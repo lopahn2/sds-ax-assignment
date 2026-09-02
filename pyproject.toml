@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "compass"
+version = "0.1.0"
+description = "나침반(Compass) - 개발 작업 복잡도 판정·비용예측·예산관리 Agentic RAG 어시스턴트"
+readme = "README.md"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = ["ruff==0.16.5"]
+
+[tool.setuptools]
+packages = ["src", "src.tools"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["data", "static", "*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "SIM", # simplify
+]
+ignore = [
+    "E501", # 한글 주석/프롬프트가 많아 줄길이는 강제하지 않는다 (line-length는 코드 스타일 참고용)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]

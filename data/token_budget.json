@@ -1,0 +1,23 @@
+{
+  "_meta": {
+    "description": "나침반(Compass) Mock 팀 토큰 예산 - 가상 데이터이며 실제 결제수단과 무관합니다.",
+    "world_today": "2026-09-15",
+    "mutable": true
+  },
+  "team_id": "team_ai-enablement",
+  "display_name": "AI Enablement 팀",
+  "balance": 187.50,
+  "currency": "USD",
+  "monthly_budget": 250.00,
+  "monthly_spent": 128.66,
+  "budget_period": "2026-09",
+  "limits": {
+    "single_task_limit": 300.00,
+    "note": "1건 커밋 한도. 초과 시 가드레일 G2에 의해 커밋이 차단됩니다."
+  },
+  "billing_account": {
+    "provider": "Anthropic Console",
+    "masked_account_id": "acct_****7f2c",
+    "note": "마스킹된 값만 저장합니다. 전체 계정 ID는 저장하지 않으며 사용자가 입력해도 거부합니다(G5)."
+  }
+}
