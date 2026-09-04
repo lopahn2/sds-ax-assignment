@@ -8,7 +8,7 @@ tags: [G4, 근거인용, 판정거버넌스]
 
 ## 근거 인용 의무
 
-복잡도 판정(`classify_complexity`)과 비용 추정(`compare_pipelines`)은 반드시 [round4-router-rubric.md](../research/round4-router-rubric.md)의 6축 정의·결정 규칙, 또는 관련 라운드 문서의 실측 카탈로그를 `doc_id`로 인용해야 한다.
+복잡도 판정과 비용 추정(`classify_complexity`)은 반드시 [round4-router-rubric.md](../research/round4-router-rubric.md)의 6축 정의·결정 규칙, 또는 관련 라운드 문서의 실측 카탈로그를 `doc_id`로 인용해야 한다.
 
 ## 확인 불가 시 원칙
 

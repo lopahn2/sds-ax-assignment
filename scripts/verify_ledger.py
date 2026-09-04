@@ -1,5 +1,5 @@
 """
-나침반(Compass) 데이터·원장 정합성 검증 스크립트
+데이터·원장 정합성 검증 스크립트
 
 두 가지를 검증한다.
   1) 정적 정합성 : 카탈로그·문서·assignment·예산·이벤트 규칙이 서로 어긋나지 않는가
@@ -36,7 +36,6 @@ def check_static() -> list[str]:
     tasks = load("tasks.json")
     budget = load("token_budget.json")
     assignments = load("assignments.json")
-    events = load("price_events.json")
 
     items = tasks["tasks"]
     by_id = {t["task_id"]: t for t in items}
@@ -78,12 +77,7 @@ def check_static() -> list[str]:
         if stages[-1] != a["status"]:
             errors.append(f"{a['assignment_id']}: timeline 마지막 단계({stages[-1]}) != status({a['status']})")
 
-    # 6. 가격·슬롯 이벤트 규칙이 실제 작업을 가리키는지
-    for r in events["rules"]:
-        if r["task_id"] not in by_id:
-            errors.append(f"{r['rule_id']}: 존재하지 않는 작업 {r['task_id']}")
-
-    # 7. 원장 불변식 - 이번 예산 기간 유효 assignment 커밋 합계 == monthly_spent
+    # 6. 원장 불변식 - 이번 예산 기간 유효 assignment 커밋 합계 == monthly_spent
     committed = round(
         sum(
             a["committed_cost"]
@@ -97,7 +91,7 @@ def check_static() -> list[str]:
             f"원장 불변식 위반: assignment 커밋 합계 ${committed:,.2f} != token_budget.monthly_spent ${budget['monthly_spent']:,.2f}"
         )
 
-    # 8. 가드레일 시나리오가 성립하는 수치인지 (test_queries.csv edge 항목 전제)
+    # 7. 가드레일 시나리오가 성립하는 수치인지 (test_queries.csv edge 항목 전제)
     balance = budget["balance"]
     remaining = round(budget["monthly_budget"] - budget["monthly_spent"], 2)
     limit = budget["limits"]["single_task_limit"]
@@ -111,14 +105,6 @@ def check_static() -> list[str]:
         if not ok(price):
             errors.append(
                 f"시나리오 전제 붕괴 - {label}: 비용 ${price:,.2f} (잔액 ${balance:,.2f} / 예산잔여 ${remaining:,.2f} / 한도 ${limit:,.2f})"
-            )
-
-    # 9. 동시 슬롯 마감 시뮬레이션 대상은 아직 활성 assignment 가 없어야 트리거가 의미를 가짐
-    active_task_ids = {a["task_id"] for a in assignments["assignments"] if a["status"] not in ("DONE", "CANCELLED")}
-    for r in events["rules"]:
-        if r["enabled"] and r["effect"].get("block_commit") and r["task_id"] in active_task_ids:
-            errors.append(
-                f"{r['rule_id']}: 대상 작업이 이미 활성 assignment 를 가지고 있어 슬롯 마감 시뮬레이션이 무의미"
             )
 
     print(

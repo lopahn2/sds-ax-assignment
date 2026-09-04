@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from .. import data_store
@@ -28,7 +27,7 @@ A6 검증 방식: 순차 curl로는 검증 불가능하고 다중 클라이언�
 
 
 @tool
-def classify_complexity(task_description: str, config: RunnableConfig) -> dict:
+def classify_complexity(task_description: str) -> dict:
     """개발 작업 설명(자연어 질문 또는 Jira 티켓 형태)을 6축 루브릭으로 SIMPLE/NORMAL/COMPLEX 3단계로 판정하고,
     그에 대응하는 구체적 워크플로우 안내(설계 강도·구현 강도·이유)와 카탈로그 기반 비용 예측을 함께 반환한다.
     유사 작업이 카탈로그에 없으면 비용 예측은 '불가'로 정직하게 반환된다. 예산 조회·일반 정책 질의처럼
@@ -40,11 +39,7 @@ def classify_complexity(task_description: str, config: RunnableConfig) -> dict:
             ("human", task_description),
         ]
     )
-    thread_id = config.get("configurable", {}).get("thread_id", "default")
     matched = data_store.search_tasks(task_description, limit=1)
-    if matched:
-        data_store.touch_task(thread_id, matched[0]["task_id"])
-
     cost_prediction = predict_cost(task_description, judgment.complexity_label)
 
     return {

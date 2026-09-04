@@ -1,11 +1,11 @@
-"""나침반(Compass) 자체 평가 실행 스크립트.
+"""자체 평가 실행 스크립트.
 
 test_queries.csv 각 행을 에이전트에 실제로 투입해:
   1) expected_tools 가 trace[] 에 실제로 등장했는지 기계적으로 대조하고
   2) LLM-as-Judge(고정 rubric)로 expected_traits 충족 / forbidden 미포함 여부를 판정한다.
 
 사용:
-    python evaluation/run_eval.py                    # 전체 20~26건, 행 사이 15초 대기하며 실행
+    python evaluation/run_eval.py                    # 전체 19건, 행 사이 15초 대기하며 실행
     python evaluation/run_eval.py --ids 1,2,13        # 특정 id만
     python evaluation/run_eval.py --out evaluation/round1_report.md
     python evaluation/run_eval.py --resume            # 기존 <out>.json에서 완료된 id는 건너뛰고 이어서
@@ -36,7 +36,7 @@ from langchain_core.messages import HumanMessage  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 from src.agent import build_app  # noqa: E402
-from src.config import MODEL_JUDGE, REASONING_JUDGE  # noqa: E402
+from src.config import MODEL_JUDGE, REASONING_JUDGE, RECURSION_LIMIT  # noqa: E402
 from src.guardrails import check_input  # noqa: E402
 from src.llm import get_llm, get_structured_llm  # noqa: E402
 from src.tracing import TraceCollector, extract_final_answer  # noqa: E402
@@ -58,11 +58,20 @@ async def run_one_query(question: str, thread_id: str) -> dict[str, Any]:
         return {"answer": guard, "tools_called": []}
     tracer = TraceCollector()
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=question)]}, config={**config, "callbacks": [tracer]}
+        {"messages": [HumanMessage(content=question)]},
+        config={**config, "callbacks": [tracer], "recursion_limit": RECURSION_LIMIT},
     )
     if "__interrupt__" in result:
         action = result["__interrupt__"][0].value["action_requests"][0]
-        answer = f"[승인 필요] {action['name']} {action['args']}"
+        approval_notice = f"[승인 필요] {action['name']} {action['args']}"
+        # server.py와 동일하게, interrupt 직전 서브에이전트 답변(판정 근거 등)을 버리지 않고 승인
+        # 요청 문구 앞에 붙인다 - 그래야 채점도 실제 프로덕션 응답과 같은 기준으로 이뤄진다.
+        prior_answer = extract_final_answer(result["messages"])
+        answer = (
+            f"{prior_answer}\n\n---\n\n{approval_notice}"
+            if prior_answer and prior_answer != "(응답을 생성하지 못했습니다)"
+            else approval_notice
+        )
     else:
         answer = extract_final_answer(result["messages"])
     return {"answer": answer, "tools_called": [s.step for s in tracer.steps]}

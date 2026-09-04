@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "나침반(Compass) Mock 판정·승인·실행 원장 - 가상 데이터입니다.",
+    "description": "Mock 판정·승인·실행 원장 - 가상 데이터입니다.",
     "world_today": "2026-09-15",
     "mutable": true,
     "invariant": "assignments[].committed_cost 중 status != 'CANCELLED' 인 2026-09 assignment의 합계 = token_budget.monthly_spent (128.66)"
@@ -58,7 +58,7 @@
         {"stage": "APPROVED", "at": "2026-09-14T11:08:00+09:00"},
         {"stage": "IN_PROGRESS", "at": "2026-09-14T11:12:00+09:00"}
       ],
-      "note": "취소 불가 단계 검증용 - revise_assignment 호출 시 정책 근거와 함께 스코프 축소·재협상 절차를 안내해야 합니다."
+      "note": "IN_PROGRESS 단계 샘플 데이터."
     },
     {
       "assignment_id": "ASG-20260914-004",

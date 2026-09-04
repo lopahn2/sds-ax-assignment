@@ -42,21 +42,33 @@ def extract_final_answer(messages: list) -> str:
     """create_supervisor 는 서브에이전트가 실제 답을 낸 뒤에도 두 가지를 더 붙인다:
     (1) "Transferring back to supervisor" 같은 handoff 필러 메시지, (2) 제어를 돌려받은 supervisor
     자신의 후속 메시지(우리 프롬프트상 supervisor는 절대 직접 답하지 않기로 되어 있으니 내용이 있어도
-    보통 라우팅 후일담이라 사용자에게 보여줄 답이 아니다). 그래서 마지막 메시지가 아니라
-    "서브에이전트(name != supervisor)가 낸 실제 텍스트가 있는 마지막 AIMessage"를 우선 찾는다."""
-    fallback = ""
-    for m in reversed(messages):
+    보통 라우팅 후일담이라 사용자에게 보여줄 답이 아니다). 그래서 "서브에이전트(name != supervisor)가
+    낸 실제 텍스트가 있는 마지막 AIMessage"만 우선 찾는다.
+
+    복합 질의(예: research_agent가 복잡도를 판정한 뒤 budget_agent로 넘어가 예산까지 확인하는 경우)는
+    서브에이전트가 2개 이상 관여하는데, "마지막 메시지 하나만" 뽑으면 먼저 답한 서브에이전트의 판정
+    내용(축 근거·doc_id 인용 등)이 통째로 사라진다 - 나중 서브에이전트가 그 내용을 다시 요약해 줄
+    것이라 기대하고 프롬프트로 강제하기보다, 관여한 서브에이전트별 마지막 답변을 등장 순서대로 전부
+    이어붙이는 쪽이 더 안정적이다. 서브에이전트가 하나뿐이면 기존과 동일하게 그 답변 하나만 반환된다."""
+    last_text_by_agent: dict[str, str] = {}
+    order: list[str] = []
+    for m in messages:
         if m.__class__.__name__ != "AIMessage":
             continue
         text = _text_of(m.content)
         if not text or text in _HANDOFF_FILLER_TEXTS:
             continue
         name = getattr(m, "name", None)
-        if name and name != "supervisor":
-            return text
-        if not fallback:
-            fallback = text
-    return fallback or "(응답을 생성하지 못했습니다)"
+        if not name or name == "supervisor":
+            continue
+        if name not in last_text_by_agent:
+            order.append(name)
+        last_text_by_agent[name] = text
+    if not order:
+        return "(응답을 생성하지 못했습니다)"
+    if len(order) == 1:
+        return last_text_by_agent[order[0]]
+    return "\n\n---\n\n".join(last_text_by_agent[name] for name in order)
 
 
 class TraceCollector(BaseCallbackHandler):
@@ -96,9 +108,7 @@ class TraceCollector(BaseCallbackHandler):
 
     def extract_assignment_summary(self) -> dict | None:
         for step in reversed(self.steps):
-            if step.step in ("commit_pipeline", "track_assignment", "revise_assignment") and isinstance(
-                step.output, dict
-            ):
+            if step.step == "commit_pipeline" and isinstance(step.output, dict):
                 return step.output
         return None
 

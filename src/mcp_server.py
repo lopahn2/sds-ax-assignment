@@ -1,7 +1,7 @@
 """budget-mcp - 팀 토큰 예산·assignment 원장을 감싸는 MCP(stdio) 서버.
 
 사내 예산 시스템을 별도 프로세스로 노출한다는 가정을 재현한다 (SERVICE.md 패턴 5).
-승인 게이트(HITL)는 이 서버가 아니라 이 서버를 호출하는 LangGraph 쪽 로컬 도구(src/tools/budget.py, src/tools/tracking.py)에서 건다 -
+승인 게이트(HITL)는 이 서버가 아니라 이 서버를 호출하는 LangGraph 쪽 로컬 도구(src/tools/budget.py)에서 건다 -
 MCP 서버 프로세스는 LangGraph의 checkpointer/interrupt 컨텍스트를 알지 못하기 때문이다.
 
 실행: python src/mcp_server.py  (stdio)
@@ -43,26 +43,6 @@ def execute_commit(task_id: str, committed_cost: float, pipeline: str) -> dict:
     try:
         result = data_store.commit_assignment(task_id, committed_cost, pipeline)
         return {"status": "COMMITTED", "assignment": result}
-    except data_store.LedgerError as e:
-        return {"status": "REJECTED", "reason_code": e.code, "message": e.message}
-
-
-@mcp.tool()
-def execute_cancel(assignment_id: str) -> dict:
-    """[승인 완료 후에만 호출] RECOMMENDED/APPROVED 단계의 assignment를 취소하고 예산을 환급한다."""
-    try:
-        result = data_store.cancel_assignment(assignment_id)
-        return {"status": "CANCELLED", "assignment": result}
-    except data_store.LedgerError as e:
-        return {"status": "REJECTED", "reason_code": e.code, "message": e.message}
-
-
-@mcp.tool()
-def execute_revise(assignment_id: str, reason: str) -> dict:
-    """취소 불가 단계(IN_PROGRESS 이후)의 assignment에 스코프 축소/재협상 사유를 기록한다."""
-    try:
-        result = data_store.add_revision_note(assignment_id, reason)
-        return {"status": "NOTED", "assignment": result}
     except data_store.LedgerError as e:
         return {"status": "REJECTED", "reason_code": e.code, "message": e.message}
 

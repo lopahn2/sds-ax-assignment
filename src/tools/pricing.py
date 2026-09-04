@@ -3,7 +3,7 @@ from __future__ import annotations
 from .. import data_store
 
 # 판정 라벨을 "설계에는 얼마나, 구현에는 얼마나"라는 실행 가능한 안내로 옮기는 레시피.
-# policy/effort-tiering.md에 정의된 나침반 자체 정책(원 연구의 2단계 SIMPLE/COMPLEX 원칙을 3단계로 확장)을
+# policy/effort-tiering.md에 정의된 이 서비스 자체 정책(원 연구의 2단계 SIMPLE/COMPLEX 원칙을 3단계로 확장)을
 # 그대로 코드화했다. 라벨(SIMPLE/NORMAL/COMPLEX)만 말하고 끝내면 사용자가 "그래서 실제로 어떻게 진행해야
 # 하는데?"를 알 수 없으므로, 항상 이 구체 정보를 함께 반환한다.
 EFFORT_RECIPES = {

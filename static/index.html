@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>나침반 Compass</title>
+<title>AI 워크플로우 라우팅 에이전트</title>
 <style>
   :root {
     --bg: #0f1115;
@@ -137,7 +137,7 @@
 
 <header>
   <div class="title">
-    <h1>🧭 나침반 Compass</h1>
+    <h1>🧭 AI 워크플로우 라우팅 에이전트</h1>
     <span class="badge" id="sessionBadge">session: default</span>
   </div>
   <div class="controls">
@@ -340,7 +340,7 @@ traceToggleBtn.addEventListener('click', () => {
   traceToggleBtn.textContent = traceVisible ? 'trace 숨기기' : 'trace 보기';
 });
 
-addMessage('system', '나침반(Compass)에 오신 것을 환영합니다. 개발 작업의 복잡도·비용을 물어보거나, 아래 예시 버튼을 눌러보세요.');
+addMessage('system', '개발 작업의 복잡도·비용을 물어보거나, 아래 예시 버튼을 눌러보세요.');
 
 fetch('/health').catch(() => {
   addMessage('system', '⚠️ API 서버 응답이 없습니다. uvicorn(또는 docker)이 실행 중인지 확인해 주세요.');

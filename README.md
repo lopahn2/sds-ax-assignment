@@ -1,4 +1,4 @@
-# 미니 PJT: 나침반(Compass)
+# 미니 PJT: 질의 복잡도에 따라 AI 그룹 워크플로우를 라우팅하는 에이전트
 
 ## 무엇을 푸나
 
@@ -11,20 +11,27 @@ Agentic RAG 어시스턴트.
 | # | 패턴 | 적용 |
 |---|---|---|
 | 1 | LCEL / 구조화 출력 | `classify_complexity`의 6축 판정을 Pydantic(`AxisJudgment`)으로 강제, 최종 응답도 `AnswerSchema(answer, contexts, trace, assignment_summary)`로 강제. Bedrock에서 thinking(추론 강도)과 강제 tool-calling을 같이 켜면 불안정해서, 구조화 출력 전용 `get_structured_llm()`은 항상 thinking을 끈다 |
-| 2 | ReAct | `create_agent` 기반 서브에이전트 3개가 자율적으로 도구 선택 |
+| 2 | ReAct | `create_agent` 기반 서브에이전트 2개가 자율적으로 도구 선택 |
 | 3 | RAG | BM25(키워드) + TF-IDF(벡터공간) 하이브리드를 RRF로 결합, 문서당 상위 2개 캡 (`src/retriever.py`) |
-| 4 | 도구 다중 결합 | 한 질의에서 카탈로그 조회 + RAG + 예산(MCP) + 판정 도구를 함께 사용 |
+| 4 | 도구 다중 결합 | 한 질의에서 RAG + 예산(MCP) + 판정 도구를 함께 사용 |
 | 5 | MCP 서버 연동 | `budget-mcp`(stdio, `src/mcp_server.py`)로 예산 조회·커밋을 분리 노출, `MultiServerMCPClient`로 연결 |
 | 6 | 가드레일 | 입력(프롬프트 인젝션·무단 상태변경·타팀 조회 정규식 차단) + 출력(계정ID·카드번호류 마스킹) 미들웨어 (`src/guardrails.py`) |
-| 7 | HITL | `HumanInTheLoopMiddleware(interrupt_on={...})`로 `commit_pipeline`/`revise_assignment` 승인 게이트 구성 |
+| 7 | HITL | `HumanInTheLoopMiddleware(interrupt_on={...})`로 `commit_pipeline` 승인 게이트 구성 |
 | 8 | 미들웨어 | 위 가드레일 미들웨어 + `SummarizationMiddleware`(대화 이력 요약) |
-| 9 | Multi-Agent Supervisor | `langgraph_supervisor.create_supervisor`로 research/budget/tracking 3개 서브에이전트 라우팅 |
+| 9 | Multi-Agent Supervisor | `langgraph_supervisor.create_supervisor`로 research/budget 2개 서브에이전트 라우팅 |
 | 11 | Observability | `TraceCollector`(BaseCallbackHandler)로 도구 호출 전체를 가로채 `trace.jsonl`에 기록 |
 | 12 | 평가 | `evaluation/run_eval.py` - 기계적 `expected_tools` 대조 + LLM-as-Judge(`expected_traits`/`forbidden`) |
 
 **의도적으로 구현하지 않은 패턴**: #10 Plan-Execute·장기 메모리. 이미 10/12 패턴을 구현해 권장치(6개)를 크게
 넘겼고, 남은 시간에 위 패턴들의 완성도(특히 가드레일·HITL·MCP 통합)를 검증하는 쪽을 택했다 — 반쯤 만든
 Plan-Execute 노드를 얹기보다, 확실히 동작하는 것을 확실히 동작하게 두는 쪽이 낫다고 판단했다.
+
+**Day 9 리뷰 이후 범위를 의도적으로 축소했다**: 초기 구현은 도구 9종·서브에이전트 3개·카탈로그 120종·
+가격변동 재검증(롤백) 시뮬레이션까지 갖췄으나, "3일 규모에 비해 범위가 크다, 핵심 흐름(판정→근거→예산확인
+→커밋) 4개 도구만으로도 충분히 보여줄 수 있다"는 리뷰 피드백을 받아 실제로 코드를 들어냈다(카탈로그
+검색·비교 도구, 실행 추적·재협상 도구, tracking_agent 서브그래프, 가격·슬롯 재검증 시뮬레이션 전부 삭제
+- SERVICE.md §9 참고). 부수 효과로 한 턴에 필요한 LLM 호출 수가 줄어 Bedrock 일일 토큰 한도에도 덜
+걸리게 됐다.
 
 ## 아키텍처
 
@@ -35,13 +42,10 @@ POST /query {"question": "...", "session_id": "..."}
         │
    [Supervisor]  질의 라우팅 (langgraph_supervisor)
         │
-        ├── research_agent   search_similar_tasks · get_task_record · compare_pipelines
-        │                     · retrieve_docs(RAG) · classify_complexity(6축 판정)
+        ├── research_agent   retrieve_docs(RAG) · classify_complexity(6축 판정)
         │
-        ├── budget_agent      get_token_budget(MCP) → [ HITL 승인 게이트 ]
-        │                     → commit_pipeline(가격·슬롯 재검증 → MCP 커밋, 원자적)
-        │
-        └── tracking_agent    track_assignment · [ HITL 승인 게이트 ] → revise_assignment(MCP)
+        └── budget_agent      get_token_budget(MCP) → [ HITL 승인 게이트 ]
+                              → commit_pipeline(MCP 커밋, 원자적)
         │
    [출력 가드레일] 계정ID/카드번호류 마스킹
         │
@@ -71,11 +75,21 @@ boto3 기본 자격증명 체인이 이를 그대로 읽는다. 모델 ID는 `sr
 Bedrock의 일일 토큰 한도(`ThrottlingException`)가 계정 전체가 아니라 **모델 ID 단위**로 걸리는 것으로
 실측되어(같은 시각에도 모델별로 성공/실패가 갈렸다), 이제 역할별로 서로 다른 모델 버킷을 전담시킨다
 (`src/config.py`): Supervisor·research_agent·budget_agent는 서로 다른 Sonnet 버킷을 하나씩, 자주(중첩으로)
-호출되는 `classify_complexity` 판정 라우터와 상대적으로 가벼운 tracking_agent는 Haiku 버킷 2개로 - 원래
-설계 의도("판정에는 저비용 모델")를 그대로 복원한 것이기도 하다. 역할 구분은 여전히 **추론 강도(extended
-thinking budget)** 로도 함께 흉내낸다(`src/llm.py`): Opus→`extra`(judge 전용, budget 4096) ·
-Sonnet→`high`(supervisor/research/budget, budget 2048) · Haiku→`low`(tracking·구조화 출력 전용, thinking 끔).
-역할별 티어는 `COMPASS_REASONING_*`, 모델 ID는 `COMPASS_MODEL_*` 환경변수로 각각 오버라이드할 수 있다.
+호출되는 `classify_complexity` 판정 라우터만 Haiku 버킷으로 - 원래 설계 의도("판정에는 저비용 모델")를
+그대로 복원한 것이기도 하다. 역할 구분은 여전히 **추론 강도(extended thinking budget)** 로도 함께
+흉내낸다(`src/llm.py`): Opus→`extra`(judge 전용, budget 4096) · Sonnet→`high`(supervisor/research/budget,
+budget 2048) · Haiku→`low`(구조화 출력 전용, thinking 끔). 역할별 티어는 `COMPASS_REASONING_*`, 모델 ID는
+`COMPASS_MODEL_*` 환경변수로 각각 오버라이드할 수 있다.
+
+역할별로 모델을 나눠도 특정 모델 하나가 그날 이미 소진된 상태일 수는 있다. 그래서 `src/llm.py`의
+`get_llm`/`get_structured_llm`이 만드는 모델은 전부 `_FallbackChatBedrockConverse`로 감싸져 있다 -
+호출이 `ThrottlingException`(일일 한도)이나 `AccessDeniedException`(권한 문제)으로 실패하면, **같은
+요청(같은 메시지·바인딩된 도구·구조화출력 설정)을 그대로 다른 모델로 재시도**한다(`config.ALL_MODELS`에서
+자기 자신을 뺀 나머지를 후보로 순서대로 시도). `bind_tools()`/`with_structured_output()`은 건드리지
+않고 `_generate`만 오버라이드해서, 이 재시도는 호출하는 쪽(에이전트·도구) 입장에서는 완전히 투명하다 -
+모델이 바뀌어도 최종 응답의 `response_metadata.model_name`에 실제로 답한 모델이 남는다. boto3 자체
+재시도(최대 4회)가 이미 소진된 뒤에야 여기까지 올라오므로 중복 재시도가 아니라 실제로 새로운(그리고
+한도가 분리된) 시도다.
 
 로컬에서 바로 띄우려면 `./run.sh` (venv 생성 + 의존성 설치 + `uvicorn` 실행).
 
@@ -102,27 +116,30 @@ curl 대신 브라우저로 직접 대화해볼 수 있는 간단한 채팅 화�
 ## 인-아웃 세트 통과율 (자체 평가)
 
 **2026-09-02, 사용자가 실제 발급받은 AWS 자격증명으로 라이브 검증을 진행했다** (전부 실제 Bedrock 호출,
-목데이터 아님). `run_eval.py`의 기계적 26건 자동 채점 전에, 대표 시나리오를 수동으로 골라 직접 그래프를
-호출해 확인한 결과는 다음과 같다(26건 전체 채점이 아니라 수동 스팟체크다):
+목데이터 아님). 아래는 그날 도구 9종·서브에이전트 3개였던 **구버전** 빌드로 대표 시나리오를 수동으로 골라
+직접 그래프를 호출해 확인한 결과다(전체 채점이 아니라 수동 스팟체크). 이후 리뷰 피드백으로 범위를
+4도구·서브에이전트 2개로 줄였으므로(위 "Day 9 리뷰 이후" 참고), `search_similar_tasks`/`compare_pipelines`/
+`track_assignment`/`revise_assignment`에 의존했던 항목은 현재 코드로는 재현되지 않는다 - 표시해 둔다:
 
 | 시나리오 | 결과 |
 |---|---|
-| 로그인 인증 API 비용 문의 (positive) | ✅ 카탈로그 T-1001 정확히 매칭, 6축 근거와 함께 SIMPLE·$22.9 판정, 유사 작업 비교까지 제시 |
+| 로그인 인증 API 비용 문의 (positive) | ✅ 카탈로그 T-1001 정확히 매칭, 6축 근거와 함께 SIMPLE·$22.9 판정 |
 | GPT-4 테스트 여부 (negative) | ✅ "테스트 안 함" + `research/overview.md` 인용, 없는 정보는 "확인 불가"로 명확히 구분 |
-| 실시간 동기화가 왜 복잡한지 (RAG 인용) | ✅ `round4-router-rubric.md`·`final-synthesis.md`·`round2-setup-methodology.md` 등 4개 청크 인용, 카탈로그 실측 비교표까지 곁들여 설명 |
+| 실시간 동기화가 왜 복잡한지 (RAG 인용) | ✅ `round4-router-rubric.md`·`final-synthesis.md`·`round2-setup-methodology.md` 등 4개 청크 인용 |
 | 잔액부족·월예산초과·1건한도초과 3종 (edge, G2) | ✅ 셋 다 `get_token_budget`만으로 자체 차단(불필요한 `commit_pipeline` 승인요청 없이), 부족액/초과액 정확히 명시, 대안 2~4개 제시 |
 | 프롬프트 인젝션 (guardrail, G1/G5) | ✅ 정규식 1차 필터에서 LLM 호출 없이 즉시 차단 |
 | 커밋 승인 2턴 플로우 (HITL+MCP) | ✅ 1턴: `commit_pipeline` 호출 시 인터럽트로 정지(미실행) → 2턴 "승인할게": 실제 MCP `execute_commit` 실행, 잔액 $187.50→$164.60 반영을 `verify_ledger.py`로 확인(테스트 후 원상복구) |
-| 진행 추적 + IN_PROGRESS 취소 시도 (tracking_agent) | ✅ 현재 단계 정확히 보고 → 취소 대신 `revise_assignment(action="renegotiate")`로 자동 전환, 승인 대기까지 정지 |
+| ~~진행 추적 + IN_PROGRESS 취소 시도~~ | 범위 축소로 `tracking_agent`·`revise_assignment` 자체가 삭제되어 더 이상 해당 없음 |
 
-- 1차 (Day 9 종료): (미집계 - 26건 전체 실행 필요)
+- 1차 (Day 9 종료): (미집계 - 축소된 세트로 전체 실행 필요)
 - 2차 (Day 10 개선 후): (미집계)
 - 개선폭: (미집계)
 
-**아직 하지 않은 것**: `evaluation/run_eval.py`로 26건 전체 자동 채점(→ `round1_report.md`/
-`round2_report.md`). 실제로 전체 실행을 시도했으나, 1번째 문항에서 **`ThrottlingException: Too many
-tokens per day`**(Bedrock 계정의 일일 토큰 한도 도달)로 막혔다 - 45초부터 2배씩 늘려가며 4회(약 12분)
-재시도해도 풀리지 않아, 짧은 버스트 제한이 아니라 그날의 한도 자체가 소진된 것으로 보고 중단했다.
+**아직 하지 않은 것**: `evaluation/run_eval.py`로 19건(주요 세트 13건 + 라우터 정확도 보강 6건) 전체
+자동 채점(→ `round1_report.md`/`round2_report.md`). 구버전(26건) 기준으로 전체 실행을 시도했으나,
+1번째 문항에서 **`ThrottlingException: Too many tokens per day`**(Bedrock 계정의 일일 토큰 한도 도달)로
+막혔다 - 45초부터 2배씩 늘려가며 4회(약 12분) 재시도해도 풀리지 않아, 짧은 버스트 제한이 아니라 그날의
+한도 자체가 소진된 것으로 보고 중단했다. 범위를 줄인 지금 세트로는 아직 재실행하지 못했다.
 `run_eval.py`는 이 사건을 계기로 **행마다 즉시 저장 + 행 사이 대기(`--delay`) + 한도 감지 시 지수
 백오프 재시도(`--max-retries`/`--backoff-base`) + `--resume` 이어하기**를 지원하도록 고쳤다(원래는 전체
 루프가 끝나야 한 번에 저장했어서, 고치기 전이었다면 이미 처리한 결과까지 다 날아갈 뻔했다). 한도가
@@ -198,21 +215,31 @@ python evaluation/run_eval.py --resume --out evaluation/round1_report.md
   다루는 벤치마크 리포트의 "재실행 오버헤드" 교훈(운영 사건 로그, `research/round1-orchestration-ops.md`)을
   내 평가 스크립트에서 그대로 재현한 셈이다.
 
-이 시도 4~11은 전부 이번 세션에서 사용자가 실제 AWS 자격증명을 제공한 뒤 라이브로 돌려보며 발견한
+- **시도 12 (범위 축소) - 리뷰 피드백 반영**: 도구 9종·서브에이전트 3개·카탈로그 120종·가격변동 재검증
+  시뮬레이션까지 다 만든 뒤, "3일 규모 미니 프로젝트치고 범위가 크다, `classify_complexity`/`retrieve_docs`/
+  `get_token_budget`/`commit_pipeline` 4개 도구만으로도 핵심 흐름을 충분히 보여줄 수 있다"는 리뷰를 받았다.
+  이미 동작하는 코드를 지우는 건 아까웠지만, 검토해보니 narrowing이 유리한 실질적 이유가 있었다: 한 턴에
+  Supervisor→서브에이전트→중첩 판정 호출→재라우팅→다른 서브에이전트로 이어지는 LLM 호출 체인이 길수록
+  Bedrock 일일 토큰 한도에 걸릴 위험도 커지는데, 정확히 시도 11에서 겪은 문제와 같은 종류다. 카탈로그
+  검색·비교 도구, 실행 추적·재협상 도구, tracking_agent 서브그래프, 가격·슬롯 재검증 시뮬레이션을 전부
+  코드에서 들어내고 카탈로그도 원래 19종으로 되돌렸다(SERVICE.md §9). **"이미 만들었다"가 범위를 유지할
+  이유는 아니다** - 발표 리스크와 남은 시간을 고려하면 확실히 동작하는 좁은 범위가 낫다는 판단.
+
+이 시도 4~12는 전부 이번 세션에서 사용자가 실제 AWS 자격증명을 제공한 뒤 라이브로 돌려보며 발견한
 것들이다 - offline fake-model 테스트는 동기 호출·단순 메시지 구조만 가정하고 있어서 이런 문제들을
 전혀 잡아내지 못했다. **offline 테스트가 통과해도 최소 한 번은 실제 모델로 end-to-end를 돌려봐야 한다**가
 이번 빌드의 가장 큰 교훈이다.
 
 ## 핵심 코드 위치
 
-- `src/agent.py` — Supervisor + 3개 서브에이전트 조립, 시스템 프롬프트
-- `src/tools/` — 9개 도구 정의, 관심사별 모듈 분리
-  (`catalog.py` 검색·비교 · `router.py` classify_complexity · `budget.py`/`tracking.py` MCP 커밋·추적 ·
-  `pricing.py` 비용예측·워크플로우 레시피(카탈로그·판정 라우터 공용) · `rag.py` retrieve_docs · `_mcp.py` MCP 클라이언트)
+- `src/agent.py` — Supervisor + 2개 서브에이전트 조립, 시스템 프롬프트
+- `src/tools/` — 4개 도구 정의, 관심사별 모듈 분리
+  (`router.py` classify_complexity · `budget.py` MCP 예산조회·커밋 · `pricing.py` 비용예측·워크플로우 레시피
+  (판정 라우터 내부용) · `rag.py` retrieve_docs · `_mcp.py` MCP 클라이언트)
 - `src/retriever.py` — RAG 하이브리드 검색
 - `src/guardrails.py` — 입력/출력 가드레일 미들웨어
 - `src/mcp_server.py` — budget-mcp stdio 서버
-- `src/data_store.py` — 원자적 파일 I/O + 원장 커밋/취소 로직
+- `src/data_store.py` — 원자적 파일 I/O + 원장 커밋 로직
 - `src/server.py` — `POST /query`, HITL 승인/거절 파싱
 - `evaluation/run_eval.py` — 자체 평가 실행 스크립트 (기계적 대조 + LLM-as-Judge, 중간저장·`--resume` 지원)
 - `static/index.html` — 웹 채팅 UI (trace 패널 포함)

@@ -7,10 +7,6 @@ import tempfile
 
 from .config import DATA_DIR
 
-# 세션(thread_id)별로 이번 대화에서 이미 조회한 task_id 집합.
-# price_events 의 on_recheck 트리거("같은 세션에서 2번째로 조회할 때 발동")를 재현하는 데 쓴다.
-_SEEN_TASKS: dict[str, set[str]] = {}
-
 
 def _load(name: str) -> dict:
     return json.loads((DATA_DIR / name).read_text(encoding="utf-8"))
@@ -62,36 +58,6 @@ def get_budget() -> dict:
     return _load("token_budget.json")
 
 
-# ---- assignment 원장 ----
-
-
-def list_assignments() -> list[dict]:
-    return _load("assignments.json")["assignments"]
-
-
-def get_assignment(assignment_id: str) -> dict | None:
-    return next((a for a in list_assignments() if a["assignment_id"] == assignment_id), None)
-
-
-CANCELLABLE_STAGES = {"RECOMMENDED", "APPROVED"}
-
-
-# ---- 가격·슬롯 이벤트 시뮬레이터 ----
-
-
-def touch_task(thread_id: str, task_id: str) -> bool:
-    """이 세션에서 task_id 를 이미 조회한 적 있으면 True(=지금이 재검증 시점)를 반환하고, 조회 기록을 남긴다."""
-    seen = _SEEN_TASKS.setdefault(thread_id, set())
-    already_seen = task_id in seen
-    seen.add(task_id)
-    return already_seen
-
-
-def get_price_event(task_id: str) -> dict | None:
-    events = _load("price_events.json")["rules"]
-    return next((r for r in events if r["task_id"] == task_id and r["enabled"]), None)
-
-
 # ---- 커밋(상태 변경, 원자적) ----
 
 
@@ -103,7 +69,7 @@ class LedgerError(Exception):
 
 
 def _register_adhoc_task(task_id: str, estimated_cost: float, pipeline: str) -> dict:
-    """search_similar_tasks/get_task_record 로도 못 찾은 신규 작업을 카탈로그에 최소 정보로 등록한다.
+    """카탈로그에 없는 신규 작업을 최소 정보로 등록한다.
     (모델이 카탈로그 ID 대신 자유 텍스트를 넘겼을 때도 assignments의 참조 무결성이 깨지지 않도록 하는 안전장치.)"""
     catalog = _load("tasks.json")
     new_task = {
@@ -177,36 +143,3 @@ def commit_assignment(task_id: str, committed_cost: float, pipeline: str) -> dic
         raise
 
     return new_assignment
-
-
-def cancel_assignment(assignment_id: str) -> dict:
-    assignments = _load("assignments.json")
-    target = next((a for a in assignments["assignments"] if a["assignment_id"] == assignment_id), None)
-    if target is None:
-        raise LedgerError("ASSIGNMENT_NOT_FOUND", "해당 assignment를 찾을 수 없습니다.")
-    if target["status"] not in CANCELLABLE_STAGES:
-        raise LedgerError("NOT_CANCELLABLE", f"현재 단계({target['status']})에서는 취소할 수 없습니다.")
-
-    budget = _load("token_budget.json")
-    budget["balance"] = round(budget["balance"] + target["committed_cost"], 2)
-    budget["monthly_spent"] = round(budget["monthly_spent"] - target["committed_cost"], 2)
-    target["status"] = "CANCELLED"
-    target["timeline"].append(
-        {"stage": "CANCELLED", "at": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
-    )
-
-    _save_atomic("token_budget.json", budget)
-    _save_atomic("assignments.json", assignments)
-    return target
-
-
-def add_revision_note(assignment_id: str, reason: str) -> dict:
-    assignments = _load("assignments.json")
-    target = next((a for a in assignments["assignments"] if a["assignment_id"] == assignment_id), None)
-    if target is None:
-        raise LedgerError("ASSIGNMENT_NOT_FOUND", "해당 assignment를 찾을 수 없습니다.")
-    target.setdefault("revision_notes", []).append(
-        {"reason": reason, "at": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
-    )
-    _save_atomic("assignments.json", assignments)
-    return target
